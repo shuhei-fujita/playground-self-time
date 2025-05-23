@@ -1,5 +1,14 @@
 #!/bin/bash
 
+to_unixtime() {
+  # GNU date優先、なければBSD date
+  if date -d "1970-01-01" +%s >/dev/null 2>&1; then
+    date -d "$1" +%s
+  else
+    date -j -f "%Y-%m-%d %H:%M:%S" "$1" +%s
+  fi
+}
+
 SCRIPT_DIR="$(dirname "$(cd "$(dirname "$0")"; pwd)/$(basename "$0")")"
 LOG_FILE="$HOME/git/samples/playground-self-time/log.txt"
 TODAY=$(date +%Y-%m-%d)
@@ -23,6 +32,44 @@ status() {
   echo "📅 日付: $(date '+%Y-%m-%d（%a）')"
   echo "===="
 
+  today=$(date +%Y-%m-%d)
+  # 本日分のログを抽出
+  today_logs=$(grep "^$today" "$LOG_FILE")
+
+  # IN/OUTペアごとに合計勤務時間を計算
+  total_sec=0
+  in_time=""
+  while read -r line; do
+    t_date=$(echo "$line" | awk '{print $1}')
+    t_time=$(echo "$line" | awk '{print $2}')
+    t_type=$(echo "$line" | awk '{print $3}')
+    if [ "$t_type" = "IN" ]; then
+      in_time="$t_date $t_time"
+    elif [ "$t_type" = "OUT" ] && [ -n "$in_time" ]; then
+      out_time="$t_date $t_time"
+      sec_in=$(to_unixtime "$in_time")
+      sec_out=$(to_unixtime "$out_time")
+      if [ $sec_out -ge $sec_in ]; then
+        total_sec=$((total_sec + sec_out - sec_in))
+      fi
+      in_time=""
+    fi
+  done <<< "$today_logs"
+
+  # 最後がINでOUTがなければ現在時刻まで加算
+  if [ -n "$in_time" ]; then
+    sec_in=$(to_unixtime "$in_time")
+    now=$(date +%s)
+    if [ $now -ge $sec_in ]; then
+      total_sec=$((total_sec + now - sec_in))
+    fi
+  fi
+
+  hours=$((total_sec / 3600))
+  mins=$(((total_sec % 3600) / 60))
+  secs=$((total_sec % 60))
+  echo "⏱ 本日の勤務時間: ${hours}時間${mins}分${secs}秒"
+
   # ログ全体から最後のIN行番号を取得
   last_in_line=$(grep -n "IN" "$LOG_FILE" | tail -n1 | cut -d: -f1)
   last_in_raw=$(sed -n "${last_in_line}p" "$LOG_FILE")
@@ -44,27 +91,8 @@ status() {
   # ステータス表示
   if [ -n "$last_in_time" ] && { [ -z "$last_out_time" ] || [ "$last_out_date $last_out_time" \< "$last_in_date $last_in_time" ]; }; then
     echo "🟢 現在の状態: 出勤中"
-    # 出勤中（退勤がまだ）
-    now=$(date +%s)
-    sec_in=$(date -d "$last_in_date $last_in_time" +%s)
-    diff_sec=$((now - sec_in))
-    hours=$((diff_sec / 3600))
-    mins=$(((diff_sec % 3600) / 60))
-    secs=$((diff_sec % 60))
-    echo "⏱ 出勤中: ${hours}時間${mins}分${secs}秒経過"
   elif [ -n "$last_in_time" ] && [ -n "$last_out_time" ]; then
     echo "🔵 現在の状態: 退勤中"
-    sec_in=$(date -d "$last_in_date $last_in_time" +%s)
-    sec_out=$(date -d "$last_out_date $last_out_time" +%s)
-    if [ $sec_out -ge $sec_in ]; then
-      diff_sec=$((sec_out - sec_in))
-      hours=$((diff_sec / 3600))
-      mins=$(((diff_sec % 3600) / 60))
-      secs=$((diff_sec % 60))
-      echo "⏱ 最終勤務時間: ${hours}時間${mins}分${secs}秒"
-    else
-      echo "⚠️ 退勤が出勤より前です"
-    fi
   else
     echo "⏱ 勤務時間: -"
   fi
