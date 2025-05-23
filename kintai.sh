@@ -46,7 +46,7 @@ status() {
     echo "🟢 現在の状態: 出勤中"
     # 出勤中（退勤がまだ）
     now=$(date +%s)
-    sec_in=$(date -j -f "%Y-%m-%d %H:%M:%S" "$last_in_date $last_in_time" +%s)
+    sec_in=$(date -d "$last_in_date $last_in_time" +%s)
     diff_sec=$((now - sec_in))
     hours=$((diff_sec / 3600))
     mins=$(((diff_sec % 3600) / 60))
@@ -54,8 +54,8 @@ status() {
     echo "⏱ 出勤中: ${hours}時間${mins}分${secs}秒経過"
   elif [ -n "$last_in_time" ] && [ -n "$last_out_time" ]; then
     echo "🔵 現在の状態: 退勤中"
-    sec_in=$(date -j -f "%Y-%m-%d %H:%M:%S" "$last_in_date $last_in_time" +%s)
-    sec_out=$(date -j -f "%Y-%m-%d %H:%M:%S" "$last_out_date $last_out_time" +%s)
+    sec_in=$(date -d "$last_in_date $last_in_time" +%s)
+    sec_out=$(date -d "$last_out_date $last_out_time" +%s)
     if [ $sec_out -ge $sec_in ]; then
       diff_sec=$((sec_out - sec_in))
       hours=$((diff_sec / 3600))
